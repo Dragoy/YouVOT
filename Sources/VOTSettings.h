@@ -10,6 +10,7 @@
 #define VOTVoiceTypeKey @"YouVOTVoiceType"
 #define VOTShortsAutoTranslateKey @"YouVOTShortsAutoTranslate"
 #define VOTShortsButtonKey @"YouVOTShortsButton"
+#define VOTButtonPositionKey @"YouVOTButtonPosition"
 // Posted through VOTSettingsDidChangeNotification when the user signs in or out
 #define VOTAccountKey @"YouVOTAccount"
 
@@ -37,6 +38,8 @@ FOUNDATION_EXPORT BOOL VOTLivelyVoice(void);
 // Shorts are only auto-translated when this is on (off by default)
 FOUNDATION_EXPORT BOOL VOTShortsAutoTranslate(void);
 FOUNDATION_EXPORT BOOL VOTShortsButton(void);
+// Player button: "top" (top row of the controls) or "bottom" (next to the fullscreen button)
+FOUNDATION_EXPORT BOOL VOTButtonOnTop(void);
 
 // Yandex account (OAuth token from the same login flow as the extension), kept in the keychain
 FOUNDATION_EXPORT NSString *VOTAccountToken(void); // nil when signed out or expired

@@ -34,23 +34,17 @@ jobs:
           git checkout --quiet
           mv iPhoneOS16.5.sdk "$GITHUB_WORKSPACE/theos/sdks/"
 
-      - name: Clone headers and YTVideoOverlay
+      - name: Clone headers
         run: |
           git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
           git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
-          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git YTVideoOverlay
 
       - name: Build rootless and rootful packages
         working-directory: YouVOT
         run: |
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           make clean package DEBUG=0 FINALPACKAGE=1
-          # YTVideoOverlay (MIT, PoomSmart) is a dependency; ship it next to YouVOT
-          cd ../YTVideoOverlay
-          make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-          make clean package DEBUG=0 FINALPACKAGE=1
-          cp packages/*.deb ../YouVOT/packages/
-          ls -l ../YouVOT/packages
+          ls -l packages
 
       - name: Upload packages
         uses: actions/upload-artifact@v7
@@ -59,7 +53,7 @@ jobs:
           path: YouVOT/packages/*.deb
 
       - name: Publish release
-        # A new Version in control on main (or a v* tag) becomes a release with both packages
+        # A new Version in control on main (or a v* tag) becomes a release with the packages
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}

@@ -35,22 +35,21 @@
 Цвет кнопки: белая — перевод выключен, оранжевая — Яндекс готовит перевод, синяя — перевод играет.
 
 Те же настройки есть в настройках YouTube в разделе «Закадровый перевод». Положение кнопки в плеере
-(сверху или снизу) меняется в настройках YouTube → *Video Overlay*.
+(сверху или снизу, рядом с полноэкранным режимом) выбирается в настройках YouVOT → «Кнопки».
 
 ## Установка
 
-YouVOT зависит от [YTVideoOverlay](https://github.com/PoomSmart/YTVideoOverlay). Его `.deb`
-лежит в каждом [релизе](https://github.com/Dragoy/YouVOT/releases) рядом с YouVOT.
+YouVOT — самостоятельный твик, без зависимостей: свою кнопку в плеер он добавляет сам.
+Пакеты лежат в [Releases](https://github.com/Dragoy/YouVOT/releases).
 
-- **Без джейлбрейка (сайдлоад).** Возьмите из релиза rootless-пакеты (`*_iphoneos-arm64.deb`)
-  YouVOT и YTVideoOverlay и встройте их в свой расшифрованный IPA YouTube с помощью
-  [cyan](https://github.com/asdfzxcvbn/pyzule-rw), Feather или Esign. Например:
-  `cyan -i YouTube.ipa -o YouTube+YouVOT.ipa -f com.ps.ytvideooverlay_*_iphoneos-arm64.deb com.dragoy.youvot_*_iphoneos-arm64.deb`.
-  Если в вашей сборке YouTube YTVideoOverlay уже есть (он входит во многие сборки), достаточно YouVOT.
+- **Без джейлбрейка (сайдлоад).** Встройте rootless-пакет `com.dragoy.youvot_*_iphoneos-arm64.deb`
+  в свой расшифрованный IPA YouTube с помощью [cyan](https://github.com/asdfzxcvbn/pyzule-rw), Feather или Esign,
+  например: `cyan -i YouTube.ipa -o YouTube+YouVOT.ipa -f com.dragoy.youvot_*_iphoneos-arm64.deb`.
+  Если в IPA уже есть старая версия YouVOT, начните с IPA без неё.
 - **IPA через GitHub Actions.** Сделайте форк, откройте *Actions → Build IPA → Run workflow*
   и вставьте прямую ссылку на свой расшифрованный IPA YouTube. Готовый IPA появится
   в черновике релиза, который видите только вы. Расшифрованный IPA YouTube мы не распространяем.
-- **Джейлбрейк.** Установите оба `.deb`: rootless — `iphoneos-arm64`, rootful — `iphoneos-arm`.
+- **Джейлбрейк.** Установите `.deb`: rootless — `iphoneos-arm64`, rootful — `iphoneos-arm`.
 
 Нужен iOS 15 или новее.
 
@@ -58,15 +57,14 @@ YouVOT зависит от [YTVideoOverlay](https://github.com/PoomSmart/YTVideo
 
 Нужен [Theos](https://theos.dev) с заголовками
 [YouTubeHeader](https://github.com/PoomSmart/YouTubeHeader) и [PSHeader](https://github.com/PoomSmart/PSHeader)
-в `$THEOS/include`. YTVideoOverlay должен лежать рядом с папкой проекта:
+в `$THEOS/include`:
 
 ```sh
-git clone --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git ../YTVideoOverlay
 make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless   # rootless
 make clean package DEBUG=0 FINALPACKAGE=1                                 # rootful
 ```
 
-GitHub Actions собирает пакеты YouVOT и YTVideoOverlay на каждый push. Когда в `main` приходит новая версия из `control`, она публикуется в Releases (описание берётся из [CHANGELOG.md](CHANGELOG.md)).
+GitHub Actions собирает пакеты на каждый push. Когда в `main` приходит новая версия из `control`, она публикуется в Releases (описание берётся из [CHANGELOG.md](CHANGELOG.md)).
 
 ## Как это работает
 
@@ -92,7 +90,7 @@ GitHub Actions собирает пакеты YouVOT и YTVideoOverlay на ка�
 
 - [ilyhalight/voice-over-translation](https://github.com/ilyhalight/voice-over-translation) и
   [FOSWLY/vot.js](https://github.com/FOSWLY/vot.js) — расширение и протокол, на которых основан YouVOT.
-- [PoomSmart](https://github.com/PoomSmart) — YTVideoOverlay, YouTubeHeader, PSHeader.
+- [PoomSmart](https://github.com/PoomSmart) — YouTubeHeader и PSHeader; кнопки в плеере устроены по образцу YTVideoOverlay (MIT).
 
 ## Лицензия
 

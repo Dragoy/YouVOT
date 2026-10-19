@@ -1,5 +1,10 @@
-#import "../YTVideoOverlay/Header.h"
-#import "../YTVideoOverlay/Init.x"
+#import <PSHeader/Misc.h>
+#import <YouTubeHeader/UIView+YouTube.h>
+#import <YouTubeHeader/YTInlinePlayerBarContainerView.h>
+#import <YouTubeHeader/YTMainAppControlsOverlayView.h>
+#import <YouTubeHeader/YTMainAppVideoPlayerOverlayView.h>
+#import <YouTubeHeader/YTMainAppVideoPlayerOverlayViewController.h>
+#import <YouTubeHeader/YTQTMButton.h>
 #import <AVFoundation/AVFoundation.h>
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
@@ -11,6 +16,7 @@
 #import <YouTubeHeader/YTPlayerViewController.h>
 #import <YouTubeHeader/YTSettingsGroupData.h>
 #import <YouTubeHeader/YTSettingsSectionItem.h>
+#import <YouTubeHeader/YTSettingsSectionItemManager.h>
 #import <YouTubeHeader/YTSettingsViewController.h>
 #import <YouTubeHeader/YTSingleVideoController.h>
 #import <YouTubeHeader/YTSingleVideoTime.h>
@@ -21,6 +27,18 @@
 #import "Sources/VOTTranslator.h"
 
 #define TweakKey @"YouVOT"
+
+#define LOC(x) [tweakBundle localizedStringForKey:x value:nil table:nil]
+#define OVERLAY_BUTTON_SIZE 24
+
+// Newer YouTube versions group the fullscreen button with other right icons
+@interface YTEnterExitFullscreenButtonView : UIView
+- (YTQTMButton *)enterExitFullscreenButton;
+@end
+
+@interface YTInlinePlayerBarContainerView (YouVOTLayout)
+- (YTEnterExitFullscreenButtonView *)enterExitFullscreenButton;
+@end
 
 // Settings category id, registered in the "Tweaks" group of YouGroupSettings when it is present
 static const NSInteger YouVOTSection = 'yvot';
@@ -429,7 +447,7 @@ static void RefreshButtons(void);
         [self applyVolumes];
     } else if ([key isEqualToString:VOTResponseLangKey] || [key isEqualToString:VOTRequestLangKey] || [key isEqualToString:VOTVoiceTypeKey] || [key isEqualToString:VOTAccountKey]) {
         [self restartIfActive];
-    } else if ([key isEqualToString:VOTShortsButtonKey]) {
+    } else if ([key isEqualToString:VOTShortsButtonKey] || [key isEqualToString:VOTButtonPositionKey]) {
         RefreshButtons();
     } else if (([key isEqualToString:VOTAutoTranslateKey] || [key isEqualToString:VOTShortsAutoTranslateKey]) && !self.isActive && AutoTranslateAllowed(self.mainPlayer)) {
         YTPlayerViewController *player = self.mainPlayer;
@@ -682,7 +700,7 @@ static void UpdateShortsButton(YouVOTShortsButton *button) {
     [button setImage:ButtonImageForState(state, 20) forState:UIControlStateNormal];
 }
 
-// Shorts have no YTVideoOverlay buttons, so add our own under the top bar of each Shorts page
+// Shorts have no player controls overlay, so add our own button under the top bar of each Shorts page
 static void EnsureShortsButton(UIViewController *reel) {
     YTPlayerViewController *player = PlayerOfReel(reel);
     if (player) [ShortsPlayers() addObject:player];
@@ -713,6 +731,7 @@ static void EnsureShortsButton(UIViewController *reel) {
 }
 
 static const void *kLongPressKey = &kLongPressKey;
+static const void *kOverlayButtonKey = &kOverlayButtonKey;
 
 static void PrepareButton(UIButton *button) {
     if (!button || objc_getAssociatedObject(button, kLongPressKey)) return;
@@ -721,20 +740,79 @@ static void PrepareButton(UIButton *button) {
     objc_setAssociatedObject(button, kLongPressKey, longPress, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
-static void RegisterButtonHost(UIView *host) {
+#pragma mark Player button
+
+// Our own button in the player controls (the approach follows PoomSmart's YTVideoOverlay,
+// MIT): top row of YTMainAppControlsOverlayView or next to the fullscreen button of
+// YTInlinePlayerBarContainerView. Kept in an associated object so it coexists with
+// builds that also ship YTVideoOverlay.
+static YTQTMButton *OverlayButton(UIView *host) {
+    return objc_getAssociatedObject(host, kOverlayButtonKey);
+}
+
+static void SetOverlayButton(UIView *host, YTQTMButton *button) {
+    objc_setAssociatedObject(host, kOverlayButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [ButtonHosts() addObject:host];
-    // The button is stored in overlayButtons right after its image is requested
-    dispatch_async(dispatch_get_main_queue(), ^{
-        PrepareButton([host valueForKey:@"overlayButtons"][TweakKey]);
-    });
+    PrepareButton(button);
+}
+
+static BOOL IsTopHost(UIView *host) {
+    return [host isKindOfClass:%c(YTMainAppControlsOverlayView)];
+}
+
+static BOOL HostUsesButton(UIView *host) {
+    return IsTopHost(host) ? VOTButtonOnTop() : !VOTButtonOnTop();
+}
+
+static void CreateTopButton(YTMainAppControlsOverlayView *self) {
+    if (OverlayButton(self)) return;
+    CGFloat padding = [[self class] respondsToSelector:@selector(topButtonAdditionalPadding)] ? [[self class] topButtonAdditionalPadding] : 0;
+    YTQTMButton *button = [self buttonWithImage:ButtonImage() accessibilityLabel:@"Voice-over translation" verticalContentPadding:padding];
+    button.hidden = YES;
+    button.alpha = 0;
+    [button addTarget:self action:@selector(didPressYouVOT:) forControlEvents:UIControlEventTouchUpInside];
+    @try {
+        [[self valueForKey:@"_topControlsAccessibilityContainerView"] addSubview:button];
+    } @catch (id ex) {
+        [self addSubview:button];
+    }
+    SetOverlayButton(self, button);
+}
+
+static void CreateBottomButton(YTInlinePlayerBarContainerView *self) {
+    if (OverlayButton(self)) return;
+    YTQTMButton *button = [%c(YTQTMButton) iconButton];
+    [button setImage:ButtonImage() forState:UIControlStateNormal];
+    [button sizeToFit];
+    button.hidden = YES;
+    button.alpha = 0;
+    button.exclusiveTouch = YES;
+    button.minHitTargetSize = 60;
+    button.accessibilityLabel = @"Voice-over translation";
+    [button addTarget:self action:@selector(didPressYouVOT:) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:button];
+    SetOverlayButton(self, button);
+}
+
+static NSMutableArray *InsertTopButton(YTMainAppControlsOverlayView *self, NSMutableArray *controls) {
+    YTQTMButton *button = OverlayButton(self);
+    if (!button || !VOTButtonOnTop() || [controls containsObject:button]) return controls;
+    if (![controls isKindOfClass:[NSMutableArray class]]) controls = [controls mutableCopy] ?: [NSMutableArray array];
+    [controls insertObject:button atIndex:0];
+    return controls;
+}
+
+static void SetBottomButtonAlpha(YTInlinePlayerBarContainerView *self, CGFloat alpha) {
+    if (!VOTButtonOnTop()) OverlayButton(self).alpha = alpha;
 }
 
 static void RefreshButtons(void) {
     UIImage *image = ButtonImage();
     for (UIView *host in ButtonHosts().allObjects) {
-        UIButton *button = [host valueForKey:@"overlayButtons"][TweakKey];
-        PrepareButton(button);
+        YTQTMButton *button = OverlayButton(host);
         [button setImage:image forState:UIControlStateNormal];
+        if (!HostUsesButton(host)) button.hidden = YES;
+        [host setNeedsLayout];
     }
     for (YouVOTShortsButton *button in ShortsButtons().allObjects) UpdateShortsButton(button);
 }
@@ -761,15 +839,52 @@ static void RefreshButtons(void) {
 
 %hook YTMainAppControlsOverlayView
 
-- (UIImage *)buttonImage:(NSString *)tweakId {
-    if (![tweakId isEqualToString:TweakKey]) return %orig;
-    RegisterButtonHost(self);
-    return ButtonImage();
+- (id)initWithDelegate:(id)delegate {
+    self = %orig;
+    CreateTopButton(self);
+    return self;
+}
+
+- (id)initWithDelegate:(id)delegate autoplaySwitchEnabled:(BOOL)autoplaySwitchEnabled {
+    self = %orig;
+    CreateTopButton(self);
+    return self;
+}
+
+- (NSMutableArray *)topButtonControls {
+    NSMutableArray *controls = %orig;
+    return InsertTopButton(self, controls);
+}
+
+- (NSMutableArray *)topControls {
+    NSMutableArray *controls = %orig;
+    return InsertTopButton(self, controls);
+}
+
+- (void)setTopOverlayVisible:(BOOL)visible isAutonavCanceledState:(BOOL)canceledState {
+    YTQTMButton *button = OverlayButton(self);
+    button.alpha = VOTButtonOnTop() && visible && !canceledState ? 1 : 0;
+    [button setImage:ButtonImage() forState:UIControlStateNormal];
+    %orig;
 }
 
 %new(v@:@)
 - (void)didPressYouVOT:(id)arg {
     [[YouVOTController shared] presentSettingsFromView:self player:PlayerOfView(self) ?: [YouVOTController shared].mainPlayer];
+}
+
+%end
+
+%hook YTMainAppVideoPlayerOverlayViewController
+
+- (void)updateTopRightButtonAvailability {
+    %orig;
+    YTMainAppControlsOverlayView *controls = nil;
+    @try {
+        controls = [[self videoPlayerOverlayView] valueForKey:@"_controlsOverlayView"];
+    } @catch (id ex) {}
+    OverlayButton(controls).hidden = !VOTButtonOnTop();
+    [controls setNeedsLayout];
 }
 
 %end
@@ -780,10 +895,116 @@ static void RefreshButtons(void) {
 
 %hook YTInlinePlayerBarContainerView
 
-- (UIImage *)buttonImage:(NSString *)tweakId {
-    if (![tweakId isEqualToString:TweakKey]) return %orig;
-    RegisterButtonHost(self);
-    return ButtonImage();
+- (id)init {
+    self = %orig;
+    CreateBottomButton(self);
+    return self;
+}
+
+- (NSMutableArray *)rightIcons {
+    NSMutableArray *icons = %orig;
+    YTQTMButton *button = OverlayButton(self);
+    if (!button || VOTButtonOnTop() || [icons containsObject:button]) return icons;
+    if (![icons isKindOfClass:[NSMutableArray class]]) icons = [icons mutableCopy] ?: [NSMutableArray array];
+    [icons insertObject:button atIndex:0];
+    return icons;
+}
+
+- (void)updateIconVisibility {
+    %orig;
+    YTQTMButton *button = OverlayButton(self);
+    button.hidden = VOTButtonOnTop();
+    [button setImage:ButtonImage() forState:UIControlStateNormal];
+}
+
+- (void)updateIconsHiddenAttribute {
+    %orig;
+    YTQTMButton *button = OverlayButton(self);
+    button.hidden = VOTButtonOnTop();
+    [button setImage:ButtonImage() forState:UIControlStateNormal];
+}
+
+- (void)hideScrubber {
+    %orig;
+    SetBottomButtonAlpha(self, 0);
+}
+
+- (void)setPeekableViewVisible:(BOOL)visible {
+    %orig;
+    SetBottomButtonAlpha(self, visible ? 1 : 0);
+}
+
+- (void)setPeekableViewVisible:(BOOL)visible fullscreenButtonVisibleShouldMatchPeekableView:(BOOL)match {
+    %orig;
+    SetBottomButtonAlpha(self, visible ? 1 : 0);
+}
+
+- (void)peekWithShowScrubber:(BOOL)scrubber setControlsAbovePlayerBarVisible:(BOOL)visible {
+    %orig;
+    SetBottomButtonAlpha(self, visible ? 1 : 0);
+}
+
+// Place the button left of the fullscreen button
+- (void)layoutSubviews {
+    %orig;
+    YTQTMButton *button = OverlayButton(self);
+    if (!button || VOTButtonOnTop()) return;
+    UIView *peekableView = [self respondsToSelector:@selector(peekableView)] ? [self peekableView] : nil;
+    BOOL fullscreenLayout = [self respondsToSelector:@selector(layout)] && self.layout == 3;
+    // In fullscreen the right icons live in peekableView
+    UIView *host = fullscreenLayout && peekableView ? peekableView : self;
+    if (button.superview != host) {
+        [button removeFromSuperview];
+        [host addSubview:button];
+    }
+    CGFloat multiFeedWidth = [self respondsToSelector:@selector(multiFeedElementView)] ? [self multiFeedElementView].frame.size.width : 0;
+    YTQTMButton *enter = [self respondsToSelector:@selector(enterFullscreenButton)] ? [self enterFullscreenButton] : nil;
+    YTQTMButton *exit = [self respondsToSelector:@selector(exitFullscreenButton)] ? [self exitFullscreenButton] : nil;
+    CGRect frame = CGRectZero;
+    CGFloat buttonWidth = 0, imageWidth = 0, cornerRadius = 0;
+    BOOL grouped = NO;
+    if ([enter yt_isVisible]) {
+        frame = enter.frame;
+        imageWidth = enter.currentImage.size.width;
+        cornerRadius = enter.layer.cornerRadius;
+    } else if ([exit yt_isVisible]) {
+        frame = exit.frame;
+        imageWidth = exit.currentImage.size.width;
+        cornerRadius = exit.layer.cornerRadius;
+    } else if ([self respondsToSelector:@selector(enterExitFullscreenButton)]) {
+        YTEnterExitFullscreenButtonView *enterExit = [self enterExitFullscreenButton];
+        UIView *group = enterExit.superview;
+        if (group && [enterExit yt_isVisible]) {
+            grouped = YES;
+            frame = [group convertRect:enterExit.frame toView:host];
+            CGRect groupFrame = [group.superview convertRect:group.frame toView:host];
+            imageWidth = [enterExit enterExitFullscreenButton].currentImage.size.width;
+            cornerRadius = enterExit.layer.cornerRadius;
+            multiFeedWidth = CGRectGetMinX(frame) - CGRectGetMinX(groupFrame);
+        }
+    }
+    // The group may sit above the container's top edge
+    if (CGRectIsEmpty(frame) || frame.origin.x <= 0 || (!grouped && frame.origin.y < -4)) return;
+    buttonWidth = frame.size.width;
+    CGFloat gap = buttonWidth > imageWidth ? 12 : buttonWidth;
+    frame.origin.x = MAX(0, frame.origin.x - gap - multiFeedWidth - buttonWidth);
+    // Builds that also ship YTVideoOverlay put its bottom buttons in the same spot; stay left of them
+    NSDictionary *others = nil;
+    if ([self respondsToSelector:NSSelectorFromString(@"overlayButtons")]) {
+        @try {
+            others = [self valueForKey:@"overlayButtons"];
+        } @catch (id ex) {}
+    }
+    if ([others isKindOfClass:[NSDictionary class]]) {
+        for (UIView *other in others.allValues) {
+            if (![other isKindOfClass:[UIView class]] || other == button || other.hidden || other.superview != host) continue;
+            if (fabs(CGRectGetMidY(other.frame) - CGRectGetMidY(frame)) > frame.size.height) continue;
+            if (CGRectGetMinX(other.frame) - gap < CGRectGetMaxX(frame))
+                frame.origin.x = MAX(0, MIN(frame.origin.x, CGRectGetMinX(other.frame) - gap - frame.size.width));
+        }
+    }
+    button.layer.cornerRadius = cornerRadius;
+    button.frame = frame;
 }
 
 %new(v@:@)
@@ -808,7 +1029,7 @@ static void RefreshButtons(void) {
     return tweaks;
 }
 
-// Without YouGroupSettings, show the section in the general settings group like YTVideoOverlay does
+// Without YouGroupSettings, show the section in the general settings group
 - (NSArray <NSNumber *> *)orderedCategories {
     if (self.type != 1 || class_getClassMethod(objc_getClass("YTSettingsGroupData"), @selector(tweaks)))
         return %orig;
@@ -966,12 +1187,6 @@ static void RefreshButtons(void) {
     tweakBundle = YouVOTBundle();
     VOTSetLocalizationBundle(tweakBundle);
     VOTRegisterDefaults();
-    [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"YTVideoOverlay-" TweakKey "-Enabled": @YES}];
-    initYTVideoOverlay(TweakKey, @{
-        AccessibilityLabelKey: @"Voice-over translation",
-        SelectorKey: @"didPressYouVOT:",
-        UpdateImageOnVisibleKey: @YES,
-    });
     %init(Top);
     %init(Bottom);
     %init(Settings);

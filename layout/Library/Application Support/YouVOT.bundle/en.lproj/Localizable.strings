@@ -1,5 +1,4 @@
-"ENABLED" = "Show voice-over translation button";
-"POSITION" = "Button position";
+"POSITION" = "Button in the player";
 "YouVOTUploadAudio_KEY" = "Send video audio to Yandex";
 
 "TRANSLATING" = "Requesting voice-over translation…";
@@ -64,3 +63,7 @@
 "SHORTS_AUTO_TRANSLATE" = "Auto-translate Shorts";
 "SHORTS_BUTTON" = "Translation button in Shorts";
 "SKIPPED_UNKNOWN_LANGUAGE" = "Auto-translate skipped this video: the spoken language could not be detected reliably. Turn the switch on to translate it anyway.";
+"SECTION_BUTTONS" = "Buttons";
+"POSITION_TOP" = "Top";
+"POSITION_BOTTOM" = "Bottom, next to fullscreen";
+"POSITION_FOOTER" = "Where the translation button sits in the video player.";

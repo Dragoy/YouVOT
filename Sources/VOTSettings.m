@@ -12,6 +12,8 @@ static NSUserDefaults *Defaults(void) {
 
 void VOTRegisterDefaults(void) {
     NSString *preferred = VOTNormalizeLanguage([NSLocale preferredLanguages].firstObject);
+    // Keep the position chosen back when the button came from YTVideoOverlay
+    BOOL legacyBottom = [Defaults() integerForKey:@"YTVideoOverlay-YouVOT-Position"] == 1;
     [Defaults() registerDefaults:@{
         VOTUploadAudioKey: @YES,
         VOTAutoTranslateKey: @NO,
@@ -23,6 +25,7 @@ void VOTRegisterDefaults(void) {
         VOTVoiceTypeKey: @"standard",
         VOTShortsAutoTranslateKey: @NO,
         VOTShortsButtonKey: @YES,
+        VOTButtonPositionKey: legacyBottom ? @"bottom" : @"top",
     }];
 }
 
@@ -76,6 +79,10 @@ BOOL VOTShortsAutoTranslate(void) {
 
 BOOL VOTShortsButton(void) {
     return [Defaults() boolForKey:VOTShortsButtonKey];
+}
+
+BOOL VOTButtonOnTop(void) {
+    return ![[Defaults() stringForKey:VOTButtonPositionKey] isEqualToString:@"bottom"];
 }
 
 #pragma mark Account

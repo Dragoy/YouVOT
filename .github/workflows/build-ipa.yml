@@ -1,7 +1,6 @@
 name: Build IPA
 
-# Injects YouVOT (and YTVideoOverlay when the app does not have it yet) into your own
-# decrypted YouTube IPA. The result goes to a draft release, which only you can see.
+# Injects YouVOT into your own decrypted YouTube IPA. The result goes to a draft release, which only you can see.
 
 on:
   workflow_dispatch:
@@ -56,16 +55,14 @@ jobs:
           git checkout --quiet
           mv iPhoneOS16.5.sdk "$GITHUB_WORKSPACE/theos/sdks/"
 
-      - name: Clone headers and YTVideoOverlay
+      - name: Clone headers
         run: |
           git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
           git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
-          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git YTVideoOverlay
 
-      - name: Build rootless packages
+      - name: Build the rootless package
         run: |
           (cd YouVOT && make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless)
-          (cd YTVideoOverlay && make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless)
           echo "YOUVOT_VERSION=$(grep '^Version:' YouVOT/control | awk '{print $2}')" >> "$GITHUB_ENV"
 
       - name: Download and check the IPA
@@ -83,13 +80,11 @@ jobs:
             echo "::error::This IPA already contains YouVOT. Start from an IPA without it."
             exit 1
           fi
-          [ -e "$app/Frameworks/YTVideoOverlay.dylib" ] && echo "HAS_YTVO=1" >> "$GITHUB_ENV" || true
           rm -rf extracted
 
       - name: Inject YouVOT
         run: |
           debs=(YouVOT/packages/*iphoneos-arm64.deb)
-          [ -z "$HAS_YTVO" ] && debs+=(YTVideoOverlay/packages/*iphoneos-arm64.deb)
           args=()
           [ -n "${{ inputs.display_name }}" ] && args+=(-n "${{ inputs.display_name }}")
           [ -n "${{ inputs.bundle_id }}" ] && args+=(-b "${{ inputs.bundle_id }}")

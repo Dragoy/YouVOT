@@ -155,6 +155,7 @@ typedef NS_ENUM(NSInteger, VOTSettingsSection) {
     VOTSettingsSectionLanguage,
     VOTSettingsSectionVoice,
     VOTSettingsSectionBehavior,
+    VOTSettingsSectionButtons,
     VOTSettingsSectionVolume,
     VOTSettingsSectionDiagnostics,
     VOTSettingsSectionAbout,
@@ -256,7 +257,8 @@ typedef NS_ENUM(NSInteger, VOTSettingsSection) {
         case VOTSettingsSectionNow: return self.translationStateProvider ? 1 : 0;
         case VOTSettingsSectionLanguage: return self.currentVideoLanguage ? 4 : 3;
         case VOTSettingsSectionVoice: return 2;
-        case VOTSettingsSectionBehavior: return 4;
+        case VOTSettingsSectionBehavior: return 3;
+        case VOTSettingsSectionButtons: return 2;
         case VOTSettingsSectionVolume: return 2;
         default: return 1;
     }
@@ -267,6 +269,7 @@ typedef NS_ENUM(NSInteger, VOTSettingsSection) {
         case VOTSettingsSectionLanguage: return VOTLocalized(@"SECTION_LANGUAGE");
         case VOTSettingsSectionVoice: return VOTLocalized(@"SECTION_VOICE");
         case VOTSettingsSectionBehavior: return VOTLocalized(@"SECTION_BEHAVIOR");
+        case VOTSettingsSectionButtons: return VOTLocalized(@"SECTION_BUTTONS");
         case VOTSettingsSectionVolume: return VOTLocalized(@"SECTION_VOLUME");
         default: return nil;
     }
@@ -359,9 +362,12 @@ typedef NS_ENUM(NSInteger, VOTSettingsSection) {
             switch (indexPath.row) {
                 case 0: return [self switchCellWithTitle:VOTLocalized(@"AUTO_TRANSLATE") key:VOTAutoTranslateKey];
                 case 1: return [self switchCellWithTitle:VOTLocalized(@"SHORTS_AUTO_TRANSLATE") key:VOTShortsAutoTranslateKey];
-                case 2: return [self switchCellWithTitle:VOTLocalized(@"SHORTS_BUTTON") key:VOTShortsButtonKey];
                 default: return [self switchCellWithTitle:VOTLocalized(@"YouVOTUploadAudio_KEY") key:VOTUploadAudioKey];
             }
+        case VOTSettingsSectionButtons:
+            return indexPath.row == 0
+                ? [self valueCellWithTitle:VOTLocalized(@"POSITION") value:VOTLocalized(VOTButtonOnTop() ? @"POSITION_TOP" : @"POSITION_BOTTOM")]
+                : [self switchCellWithTitle:VOTLocalized(@"SHORTS_BUTTON") key:VOTShortsButtonKey];
         case VOTSettingsSectionVolume:
             return indexPath.row == 0
                 ? [self sliderCellWithTitle:VOTLocalized(@"ORIGINAL_VOLUME") key:VOTOriginalVolumeKey value:VOTOriginalVolume()]
@@ -402,6 +408,12 @@ typedef NS_ENUM(NSInteger, VOTSettingsSection) {
     }
     if (indexPath.section == VOTSettingsSectionAbout) {
         [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/ilyhalight/voice-over-translation"] options:@{} completionHandler:nil];
+        return;
+    }
+    if (indexPath.section == VOTSettingsSectionButtons && indexPath.row == 0) {
+        [self pushOptionsWithTitle:VOTLocalized(@"POSITION") values:@[@"top", @"bottom"] titles:@[VOTLocalized(@"POSITION_TOP"), VOTLocalized(@"POSITION_BOTTOM")] selected:@[VOTButtonOnTop() ? @"top" : @"bottom"] multiple:NO footer:VOTLocalized(@"POSITION_FOOTER") onChange:^(NSArray<NSString *> *selected) {
+            VOTSetSetting(VOTButtonPositionKey, selected.firstObject);
+        }];
         return;
     }
     if (indexPath.section == VOTSettingsSectionVoice) {
