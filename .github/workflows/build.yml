@@ -16,7 +16,7 @@ jobs:
       HOMEBREW_NO_ENV_HINTS: 1
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: YouVOT
 
@@ -48,14 +48,28 @@ jobs:
           ls -l packages
 
       - name: Upload packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: YouVOT-debs
           path: YouVOT/packages/*.deb
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        # A new Version in control on main (or a v* tag) becomes a release with both packages
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         working-directory: YouVOT
-        run: gh release create "$GITHUB_REF_NAME" packages/*.deb --repo "$GITHUB_REPOSITORY" --title "YouVOT ${GITHUB_REF_NAME#v}" --generate-notes
+        run: |
+          version=$(grep '^Version:' control | awk '{print $2}')
+          tag="v$version"
+          if [[ "$GITHUB_REF" != refs/heads/main && "$GITHUB_REF" != "refs/tags/$tag" ]]; then
+            echo "Not main and not the $tag tag, skipping the release"
+            exit 0
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists"
+            exit 0
+          fi
+          # Notes: the section of CHANGELOG.md for this version
+          awk -v v="$version" '$0 ~ "^## " v "( |$)" {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
+          gh release create "$tag" packages/*.deb --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "YouVOT $version" --notes-file notes.md

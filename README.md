@@ -63,7 +63,7 @@ make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless   # root
 make clean package DEBUG=0 FINALPACKAGE=1                                 # rootful
 ```
 
-GitHub Actions собирает оба пакета на каждый push, а для тегов `v*` публикует их в Releases.
+GitHub Actions собирает оба пакета на каждый push. Когда в `main` приходит новая версия из `control`, она публикуется в Releases (описание берётся из [CHANGELOG.md](CHANGELOG.md)).
 
 ## Как это работает
 
