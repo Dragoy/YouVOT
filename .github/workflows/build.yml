@@ -45,7 +45,12 @@ jobs:
         run: |
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           make clean package DEBUG=0 FINALPACKAGE=1
-          ls -l packages
+          # YTVideoOverlay (MIT, PoomSmart) is a dependency; ship it next to YouVOT
+          cd ../YTVideoOverlay
+          make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          make clean package DEBUG=0 FINALPACKAGE=1
+          cp packages/*.deb ../YouVOT/packages/
+          ls -l ../YouVOT/packages
 
       - name: Upload packages
         uses: actions/upload-artifact@v7
@@ -67,6 +72,11 @@ jobs:
             exit 0
           fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Only add packages that are missing; published files are never replaced
+            existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+            for deb in packages/*.deb; do
+              grep -qxF "$(basename "$deb")" <<<"$existing" || gh release upload "$tag" "$deb" --repo "$GITHUB_REPOSITORY"
+            done
             echo "Release $tag already exists"
             exit 0
           fi

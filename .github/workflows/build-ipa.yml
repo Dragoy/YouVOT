@@ -1,0 +1,106 @@
+name: Build IPA
+
+# Injects YouVOT (and YTVideoOverlay when the app does not have it yet) into your own
+# decrypted YouTube IPA. The result goes to a draft release, which only you can see.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Direct link to your decrypted YouTube IPA"
+        required: true
+        type: string
+      display_name:
+        description: "App name (optional)"
+        required: false
+        type: string
+      bundle_id:
+        description: "Bundle ID (optional)"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      HOMEBREW_NO_ENV_HINTS: 1
+      IPA_URL: ${{ inputs.ipa_url }}
+    steps:
+      - name: Hide the IPA link
+        run: echo "::add-mask::$IPA_URL"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: YouVOT
+
+      - name: Install dependencies
+        run: |
+          brew install --quiet make ldid dpkg
+          pipx install --force https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+      - name: Set up Theos
+        run: |
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "THEOS=$GITHUB_WORKSPACE/theos" >> "$GITHUB_ENV"
+          git clone --quiet --recursive --depth=1 https://github.com/theos/theos.git theos
+          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/theos/sdks.git theos-sdks
+          cd theos-sdks
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout --quiet
+          mv iPhoneOS16.5.sdk "$GITHUB_WORKSPACE/theos/sdks/"
+
+      - name: Clone headers and YTVideoOverlay
+        run: |
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
+          git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git YTVideoOverlay
+
+      - name: Build rootless packages
+        run: |
+          (cd YouVOT && make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless)
+          (cd YTVideoOverlay && make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless)
+          echo "YOUVOT_VERSION=$(grep '^Version:' YouVOT/control | awk '{print $2}')" >> "$GITHUB_ENV"
+
+      - name: Download and check the IPA
+        run: |
+          curl -fsSL --retry 3 -o youtube.ipa "$IPA_URL"
+          type=$(file --mime-type -b youtube.ipa)
+          if [[ "$type" != "application/zip" && "$type" != "application/x-ios-app" ]]; then
+            echo "::error::The link did not return an IPA (got $type). Use a direct download link."
+            exit 1
+          fi
+          unzip -q youtube.ipa -d extracted
+          app=$(ls -d extracted/Payload/*.app | head -1)
+          echo "YT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist")" >> "$GITHUB_ENV"
+          if [ -e "$app/Frameworks/YouVOT.dylib" ]; then
+            echo "::error::This IPA already contains YouVOT. Start from an IPA without it."
+            exit 1
+          fi
+          [ -e "$app/Frameworks/YTVideoOverlay.dylib" ] && echo "HAS_YTVO=1" >> "$GITHUB_ENV" || true
+          rm -rf extracted
+
+      - name: Inject YouVOT
+        run: |
+          debs=(YouVOT/packages/*iphoneos-arm64.deb)
+          [ -z "$HAS_YTVO" ] && debs+=(YTVideoOverlay/packages/*iphoneos-arm64.deb)
+          args=()
+          [ -n "${{ inputs.display_name }}" ] && args+=(-n "${{ inputs.display_name }}")
+          [ -n "${{ inputs.bundle_id }}" ] && args+=(-b "${{ inputs.bundle_id }}")
+          cyan -i youtube.ipa -o "YouTube_${YT_VERSION}_YouVOT_${YOUVOT_VERSION}.ipa" -u -w -s -f "${debs[@]}" "${args[@]}"
+
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ipa-${GITHUB_RUN_NUMBER}" "YouTube_${YT_VERSION}_YouVOT_${YOUVOT_VERSION}.ipa" \
+            --repo "$GITHUB_REPOSITORY" --draft \
+            --title "YouTube ${YT_VERSION} + YouVOT ${YOUVOT_VERSION}" \
+            --notes "Built from your own IPA. This draft is only visible to you; do not publish it."
+          echo "### The IPA is ready: ${{ github.server_url }}/${{ github.repository }}/releases" >> "$GITHUB_STEP_SUMMARY"

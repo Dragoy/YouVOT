@@ -16,6 +16,7 @@
   долгое нажатие — включить / выключить. Своя кнопка на экране Shorts.
 - Раздел «Закадровый перевод» в настройках YouTube и журнал перевода для диагностики.
 
-Установка: встройте `com.dragoy.youvot_1.4.0_iphoneos-arm64.deb` (rootless) в IPA YouTube вместе
-с [YTVideoOverlay](https://github.com/PoomSmart/YTVideoOverlay) или поставьте пакет на джейлбрейк
-(`iphoneos-arm64` — rootless, `iphoneos-arm` — rootful).
+Установка: встройте `com.dragoy.youvot_1.4.0_iphoneos-arm64.deb` и `com.ps.ytvideooverlay_*_iphoneos-arm64.deb`
+(оба лежат в этом релизе) в свой IPA YouTube, либо соберите IPA через *Actions → Build IPA*.
+На джейлбрейке: `iphoneos-arm64` — rootless, `iphoneos-arm` — rootful.
+YTVideoOverlay — [PoomSmart/YTVideoOverlay](https://github.com/PoomSmart/YTVideoOverlay), лицензия MIT.

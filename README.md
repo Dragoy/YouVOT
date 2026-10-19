@@ -39,15 +39,18 @@
 
 ## Установка
 
-YouVOT зависит от [YTVideoOverlay](https://github.com/PoomSmart/YTVideoOverlay).
+YouVOT зависит от [YTVideoOverlay](https://github.com/PoomSmart/YTVideoOverlay). Его `.deb`
+лежит в каждом [релизе](https://github.com/Dragoy/YouVOT/releases) рядом с YouVOT.
 
-- **Без джейлбрейка (сайдлоад).** Скачайте из [Releases](https://github.com/Dragoy/YouVOT/releases)
-  rootless-пакет `com.dragoy.youvot_*_iphoneos-arm64.deb` и встройте его в расшифрованный IPA YouTube
-  вместе с YTVideoOverlay. Подойдут [cyan](https://github.com/asdfzxcvbn/pyzule-rw), Feather или Esign.
-  Например: `cyan -i YouTube.ipa -o YouTube+YouVOT.ipa -f YTVideoOverlay.deb com.dragoy.youvot_*.deb`.
+- **Без джейлбрейка (сайдлоад).** Возьмите из релиза rootless-пакеты (`*_iphoneos-arm64.deb`)
+  YouVOT и YTVideoOverlay и встройте их в свой расшифрованный IPA YouTube с помощью
+  [cyan](https://github.com/asdfzxcvbn/pyzule-rw), Feather или Esign. Например:
+  `cyan -i YouTube.ipa -o YouTube+YouVOT.ipa -f com.ps.ytvideooverlay_*_iphoneos-arm64.deb com.dragoy.youvot_*_iphoneos-arm64.deb`.
   Если в вашей сборке YouTube YTVideoOverlay уже есть (он входит во многие сборки), достаточно YouVOT.
-- **Джейлбрейк.** Установите `.deb` (rootless — `iphoneos-arm64`, rootful — `iphoneos-arm`)
-  вместе с YTVideoOverlay из репозитория PoomSmart.
+- **IPA через GitHub Actions.** Сделайте форк, откройте *Actions → Build IPA → Run workflow*
+  и вставьте прямую ссылку на свой расшифрованный IPA YouTube. Готовый IPA появится
+  в черновике релиза, который видите только вы. Расшифрованный IPA YouTube мы не распространяем.
+- **Джейлбрейк.** Установите оба `.deb`: rootless — `iphoneos-arm64`, rootful — `iphoneos-arm`.
 
 Нужен iOS 15 или новее.
 
@@ -63,7 +66,7 @@ make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless   # root
 make clean package DEBUG=0 FINALPACKAGE=1                                 # rootful
 ```
 
-GitHub Actions собирает оба пакета на каждый push. Когда в `main` приходит новая версия из `control`, она публикуется в Releases (описание берётся из [CHANGELOG.md](CHANGELOG.md)).
+GitHub Actions собирает пакеты YouVOT и YTVideoOverlay на каждый push. Когда в `main` приходит новая версия из `control`, она публикуется в Releases (описание берётся из [CHANGELOG.md](CHANGELOG.md)).
 
 ## Как это работает
 
