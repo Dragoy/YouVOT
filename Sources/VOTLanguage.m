@@ -1,4 +1,5 @@
 #import "VOTLanguage.h"
+#import "VOTProtobuf.h"
 #import <NaturalLanguage/NaturalLanguage.h>
 
 NSArray<NSString *> *VOTRequestLanguages(void) {
@@ -96,6 +97,87 @@ static NSString *VOTAudioTrackIdLanguage(NSString *trackId) {
     return VOTNormalizeLanguage([VOTString(trackId) componentsSeparatedByString:@"."].firstObject);
 }
 
+// xtags come either as plain "key=value:key=value" or as base64 of a protobuf
+// message with repeated { 1: key, 2: value } entries
+static NSDictionary<NSString *, NSString *> *VOTParseXtags(NSString *xtags) {
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    if (![xtags isKindOfClass:[NSString class]] || !xtags.length) return result;
+    if ([xtags containsString:@"="] && ![xtags hasSuffix:@"="]) {
+        for (NSString *pair in [xtags componentsSeparatedByString:@":"]) {
+            NSRange equals = [pair rangeOfString:@"="];
+            if (equals.location != NSNotFound) result[[pair substringToIndex:equals.location]] = [pair substringFromIndex:equals.location + 1];
+        }
+        if (result.count) return result;
+    }
+    NSString *base64 = [[xtags stringByReplacingOccurrencesOfString:@"-" withString:@"+"] stringByReplacingOccurrencesOfString:@"_" withString:@"/"];
+    while (base64.length % 4) base64 = [base64 stringByAppendingString:@"="];
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:base64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
+    for (id entry in VOTPBDecode(data)[@1]) {
+        if (![entry isKindOfClass:[NSData class]]) continue;
+        VOTPBMessage *pair = VOTPBDecode(entry);
+        NSString *key = VOTPBString(pair, 1), *value = VOTPBString(pair, 2);
+        if (key && value) result[key] = value;
+    }
+    return result;
+}
+
+static NSString *VOTUrlXtags(NSString *url) {
+    if (![url isKindOfClass:[NSString class]]) return nil;
+    for (NSURLQueryItem *item in [NSURLComponents componentsWithString:url].queryItems) {
+        if ([item.name isEqualToString:@"xtags"]) return item.value;
+    }
+    return nil;
+}
+
+VOTAudioTrackKind VOTClassifyAudioTrack(NSString *xtags, NSString *url, NSString *displayName, BOOL isAutoDubbed) {
+    NSString *acont = (VOTParseXtags(xtags)[@"acont"] ?: VOTParseXtags(VOTUrlXtags(url))[@"acont"]).lowercaseString;
+    if ([acont isEqualToString:@"original"]) return VOTAudioTrackKindOriginal;
+    if (acont.length) return VOTAudioTrackKindDubbed; // dubbed, dubbed-auto, descriptive, secondary
+    if (isAutoDubbed) return VOTAudioTrackKindDubbed;
+    NSString *name = [displayName isKindOfClass:[NSString class]] ? displayName.lowercaseString : @"";
+    for (NSString *marker in @[@"original", @"оригинал"]) {
+        if ([name containsString:marker]) return VOTAudioTrackKindOriginal;
+    }
+    for (NSString *marker in @[@"dubbed", @"дублир", @"автодубл", @"descriptive", @"description", @"тифло"]) {
+        if ([name containsString:marker]) return VOTAudioTrackKindDubbed;
+    }
+    return VOTAudioTrackKindUnknown;
+}
+
+VOTAudioTrackKind VOTInnerTubeAudioTrackKind(NSDictionary *format) {
+    NSDictionary *track = [format[@"audioTrack"] isKindOfClass:[NSDictionary class]] ? format[@"audioTrack"] : nil;
+    NSString *url = format[@"url"];
+    if (!url && [format[@"signatureCipher"] isKindOfClass:[NSString class]]) {
+        NSURLComponents *cipher = [NSURLComponents new];
+        cipher.query = format[@"signatureCipher"];
+        for (NSURLQueryItem *item in cipher.queryItems) if ([item.name isEqualToString:@"url"]) url = item.value;
+    }
+    return VOTClassifyAudioTrack(format[@"xtags"], url, track[@"displayName"], [track[@"isAutoDubbed"] boolValue]);
+}
+
+// Picks the language of the original audio from all audio tracks of a video. A track the
+// user switched to in YouTube (or YouTube's own auto-dub in the UI language) must never
+// decide: with several languages and no original marker, the answer is "unknown" and
+// the ASR captions, which follow the original speech, take over.
+static NSString *VOTOriginalTrackLanguage(NSArray<NSString *> *languages, NSArray<NSNumber *> *kinds, NSString **summary) {
+    NSMutableOrderedSet *all = [NSMutableOrderedSet orderedSet];
+    NSMutableOrderedSet *original = [NSMutableOrderedSet orderedSet];
+    NSMutableOrderedSet *notDubbed = [NSMutableOrderedSet orderedSet];
+    NSMutableOrderedSet *described = [NSMutableOrderedSet orderedSet];
+    [languages enumerateObjectsUsingBlock:^(NSString *language, NSUInteger index, BOOL *stop) {
+        VOTAudioTrackKind kind = kinds[index].integerValue;
+        [all addObject:language];
+        if (kind == VOTAudioTrackKindOriginal) [original addObject:language];
+        if (kind != VOTAudioTrackKindDubbed) [notDubbed addObject:language];
+        [described addObject:[NSString stringWithFormat:@"%@%@", language, kind == VOTAudioTrackKindOriginal ? @"(original)" : kind == VOTAudioTrackKindDubbed ? @"(dub)" : @""]];
+    }];
+    if (summary) *summary = described.count ? [described.array componentsJoinedByString:@","] : nil;
+    if (original.count == 1) return original.firstObject;
+    if (all.count == 1) return all.firstObject;
+    if (!original.count && notDubbed.count == 1) return notDubbed.firstObject;
+    return nil;
+}
+
 static NSString *VOTXtagsLanguage(NSString *url) {
     NSURLComponents *components = [NSURLComponents componentsWithString:url ?: @""];
     for (NSURLQueryItem *item in components.queryItems) {
@@ -125,16 +207,19 @@ static NSString *VOTTextLanguage(NSString *text) {
     id playerData = VOTValue(playerResponse, @"playerData") ?: playerResponse;
 
     NSArray *formats = VOTPath(playerData, @[@"streamingData", @"adaptiveFormatsArray"]);
-    if ([formats isKindOfClass:[NSArray class]]) {
-        for (id format in formats) {
-            if (VOTValue(format, @"hasAudioTrack") && ![VOTValue(format, @"hasAudioTrack") boolValue]) continue;
-            id track = VOTValue(format, @"audioTrack");
-            NSString *language = VOTAudioTrackIdLanguage(VOTValue(track, @"id_p"));
-            if (!language) continue;
-            if ([VOTValue(track, @"audioIsDefault") boolValue] || !result.audioTrackLanguage) result.audioTrackLanguage = language;
-            if ([VOTValue(track, @"audioIsDefault") boolValue]) break;
-        }
+    NSMutableArray *languages = [NSMutableArray array], *kinds = [NSMutableArray array];
+    for (id format in [formats isKindOfClass:[NSArray class]] ? formats : @[]) {
+        if (VOTValue(format, @"hasAudioTrack") && ![VOTValue(format, @"hasAudioTrack") boolValue]) continue;
+        id track = VOTValue(format, @"audioTrack");
+        NSString *language = VOTAudioTrackIdLanguage(VOTValue(track, @"id_p"));
+        if (!language) continue;
+        [languages addObject:language];
+        [kinds addObject:@(VOTClassifyAudioTrack(VOTString(VOTValue(format, @"xtags")), VOTString(VOTValue(format, @"URL")) ?: VOTString(VOTValue(format, @"url")),
+                                                 VOTString(VOTValue(track, @"displayName")), [VOTValue(track, @"isAutoDubbed") boolValue]))];
     }
+    NSString *summary = nil;
+    result.audioTrackLanguage = VOTOriginalTrackLanguage(languages, kinds, &summary);
+    result.audioTracksSummary = summary;
 
     NSInteger budget = 400;
     id captions = VOTValue(playerData, @"captions");
@@ -151,16 +236,19 @@ static NSString *VOTTextLanguage(NSString *text) {
     if (![response isKindOfClass:[NSDictionary class]]) return result;
 
     NSArray *formats = response[@"streamingData"][@"adaptiveFormats"];
+    NSMutableArray *languages = [NSMutableArray array], *kinds = [NSMutableArray array];
     for (NSDictionary *format in [formats isKindOfClass:[NSArray class]] ? formats : @[]) {
         if (![format isKindOfClass:[NSDictionary class]] || ![format[@"mimeType"] hasPrefix:@"audio/"]) continue;
         NSDictionary *track = format[@"audioTrack"];
         NSString *language = [track isKindOfClass:[NSDictionary class]] ? VOTAudioTrackIdLanguage(track[@"id"]) : nil;
         language = language ?: VOTXtagsLanguage(format[@"url"]);
         if (!language) continue;
-        BOOL isDefault = [track isKindOfClass:[NSDictionary class]] && [track[@"audioIsDefault"] boolValue];
-        if (isDefault || !result.audioTrackLanguage) result.audioTrackLanguage = language;
-        if (isDefault) break;
+        [languages addObject:language];
+        [kinds addObject:@(VOTInnerTubeAudioTrackKind(format))];
     }
+    NSString *summary = nil;
+    result.audioTrackLanguage = VOTOriginalTrackLanguage(languages, kinds, &summary);
+    result.audioTracksSummary = summary;
 
     NSArray *captionTracks = response[@"captions"][@"playerCaptionsTracklistRenderer"][@"captionTracks"];
     for (NSDictionary *track in [captionTracks isKindOfClass:[NSArray class]] ? captionTracks : @[]) {
@@ -180,6 +268,7 @@ static NSString *VOTTextLanguage(NSString *text) {
 
 - (void)mergeMissingFrom:(VOTVideoLanguage *)other {
     if (!self.audioTrackLanguage) self.audioTrackLanguage = other.audioTrackLanguage;
+    if (!self.audioTracksSummary) self.audioTracksSummary = other.audioTracksSummary;
     if (!self.captionsLanguage) self.captionsLanguage = other.captionsLanguage;
     if (!self.title) self.title = other.title;
     if (!self.videoDescription) self.videoDescription = other.videoDescription;

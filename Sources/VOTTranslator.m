@@ -129,7 +129,7 @@ static VOTYandexClient *SharedClient(void) {
 }
 
 - (NSString *)detectLanguage {
-    VOTLog(@"video %@: app metadata audio=%@ asr=%@ title=%@", _videoID, _videoLanguage.audioTrackLanguage ?: @"-", _videoLanguage.captionsLanguage ?: @"-", _videoLanguage.title.length ? @"yes" : @"no");
+    VOTLog(@"video %@: app metadata audio=%@ [%@] asr=%@ title=%@", _videoID, _videoLanguage.audioTrackLanguage ?: @"-", _videoLanguage.audioTracksSummary ?: @"", _videoLanguage.captionsLanguage ?: @"-", _videoLanguage.title.length ? @"yes" : @"no");
     // The YouTube app usually knows the audio track or the ASR captions language already;
     // otherwise ask InnerTube, which has both, before falling back to the title
     if (!_videoLanguage.audioTrackLanguage && !_videoLanguage.captionsLanguage) {
@@ -137,7 +137,7 @@ static VOTYandexClient *SharedClient(void) {
         _playerResponse = [_youtube playerResponseForVideoID:_videoID error:&error];
         if (_playerResponse) {
             VOTVideoLanguage *innerTube = [VOTVideoLanguage languageFromInnerTubeResponse:_playerResponse];
-            VOTLog(@"InnerTube metadata audio=%@ asr=%@", innerTube.audioTrackLanguage ?: @"-", innerTube.captionsLanguage ?: @"-");
+            VOTLog(@"InnerTube metadata audio=%@ [%@] asr=%@", innerTube.audioTrackLanguage ?: @"-", innerTube.audioTracksSummary ?: @"", innerTube.captionsLanguage ?: @"-");
             [_videoLanguage mergeMissingFrom:innerTube];
         } else {
             VOTLog(@"InnerTube metadata unavailable: %@", error.localizedDescription);

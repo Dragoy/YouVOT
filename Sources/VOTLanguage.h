@@ -9,6 +9,18 @@ FOUNDATION_EXPORT NSString *VOTNormalizeLanguage(NSString *code);
 // Localized language name, e.g. "Английский"
 FOUNDATION_EXPORT NSString *VOTLanguageName(NSString *code);
 
+typedef NS_ENUM(NSInteger, VOTAudioTrackKind) {
+    VOTAudioTrackKindDubbed = -1,   // dubbed, auto-dubbed or audio description
+    VOTAudioTrackKindUnknown = 0,
+    VOTAudioTrackKindOriginal = 1,
+};
+
+// Classifies a YouTube audio track by the "acont" xtag (plain "acont=original:lang=en"
+// or base64 protobuf), the isAutoDubbed flag and the display name
+FOUNDATION_EXPORT VOTAudioTrackKind VOTClassifyAudioTrack(NSString *xtags, NSString *url, NSString *displayName, BOOL isAutoDubbed);
+// Kind of an InnerTube adaptiveFormats entry
+FOUNDATION_EXPORT VOTAudioTrackKind VOTInnerTubeAudioTrackKind(NSDictionary *format);
+
 typedef NS_ENUM(NSInteger, VOTLanguageSource) {
     VOTLanguageSourceNone,
     VOTLanguageSourceAudioTrack,   // default audio track of the video
@@ -20,7 +32,10 @@ typedef NS_ENUM(NSInteger, VOTLanguageSource) {
 // The order of sources follows the extension's YoutubeHelper.getLanguage():
 // audio track, then ASR captions, then text detection.
 @interface VOTVideoLanguage : NSObject
+// Language of the original audio track; nil when several tracks exist and none is marked original
 @property (nonatomic, copy) NSString *audioTrackLanguage;
+// Human readable list of the audio tracks, for the log
+@property (nonatomic, copy) NSString *audioTracksSummary;
 @property (nonatomic, copy) NSString *captionsLanguage;
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *videoDescription;

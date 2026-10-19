@@ -1,5 +1,6 @@
 #import "VOTYouTubeAudio.h"
 #import "VOTYandexClient.h"
+#import "VOTLanguage.h"
 
 // The ANDROID_VR InnerTube client returns plain stream URLs without a PO token,
 // which is why yt-dlp uses it as a default client too.
@@ -80,21 +81,26 @@ static NSString *const kVOTInnerTubeUserAgent = @"com.google.android.apps.youtub
 - (VOTYouTubeAudioFormat *)audioFormatFromPlayerResponse:(NSDictionary *)json error:(NSError **)error {
 
     NSMutableArray<NSDictionary *> *candidates = [NSMutableArray array];
-    BOOL hasDefaultTrack = NO;
     for (NSDictionary *format in json[@"streamingData"][@"adaptiveFormats"]) {
         if (![format isKindOfClass:[NSDictionary class]]) continue;
         if (![format[@"mimeType"] hasPrefix:@"audio/"] || ![format[@"url"] length]) continue;
         // Skip dynamic range compressed variants, like the extension's isDrcAudioFormat()
         if ([format[@"isDrc"] boolValue] || [format[@"xtags"] containsString:@"drc=1"] || [format[@"url"] containsString:@"drc%3D1"] || [format[@"url"] containsString:@"drc=1"]) continue;
         [candidates addObject:format];
-        if ([format[@"audioTrack"][@"audioIsDefault"] boolValue]) hasDefaultTrack = YES;
     }
-    // Multi-language videos: send the original (default) track, not a dub
-    if (hasDefaultTrack) {
-        [candidates filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *format, NSDictionary *bindings) {
-            return [format[@"audioTrack"][@"audioIsDefault"] boolValue];
-        }]];
-    }
+    // Multi-language videos: Yandex must get the original speech, never a dub
+    NSArray *original = [candidates filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *format, NSDictionary *bindings) {
+        return VOTInnerTubeAudioTrackKind(format) == VOTAudioTrackKindOriginal;
+    }]];
+    NSArray *notDubbed = [candidates filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *format, NSDictionary *bindings) {
+        return VOTInnerTubeAudioTrackKind(format) != VOTAudioTrackKindDubbed;
+    }]];
+    NSArray *defaults = [notDubbed filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *format, NSDictionary *bindings) {
+        return [format[@"audioTrack"][@"audioIsDefault"] boolValue];
+    }]];
+    if (original.count) candidates = [original mutableCopy];
+    else if (defaults.count) candidates = [defaults mutableCopy];
+    else if (notDubbed.count) candidates = [notDubbed mutableCopy];
     // Same choice as selectSmallestAudioFormat() in the extension
     NSDictionary *best = nil;
     long long bestLength = LLONG_MAX;
