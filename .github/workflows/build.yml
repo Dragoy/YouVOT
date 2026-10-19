@@ -71,7 +71,10 @@ jobs:
             echo "Not main and not the $tag tag, skipping the release"
             exit 0
           fi
+          # Notes: the section of CHANGELOG.md for this version
+          awk -v v="$version" '$0 ~ "^## " v "( |$)" {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
             # Only add packages that are missing; published files are never replaced
             existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
             for deb in packages/*.deb; do
@@ -80,6 +83,4 @@ jobs:
             echo "Release $tag already exists"
             exit 0
           fi
-          # Notes: the section of CHANGELOG.md for this version
-          awk -v v="$version" '$0 ~ "^## " v "( |$)" {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
           gh release create "$tag" packages/*.deb --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "YouVOT $version" --notes-file notes.md
