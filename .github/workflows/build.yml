@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      HOMEBREW_NO_ENV_HINTS: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: YouVOT
+
+      - name: Install dependencies
+        run: brew install --quiet make ldid dpkg
+
+      - name: Set up Theos
+        run: |
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "THEOS=$GITHUB_WORKSPACE/theos" >> "$GITHUB_ENV"
+          git clone --quiet --recursive --depth=1 https://github.com/theos/theos.git theos
+          git clone --quiet --depth=1 -n --filter=tree:0 https://github.com/theos/sdks.git theos-sdks
+          cd theos-sdks
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout --quiet
+          mv iPhoneOS16.5.sdk "$GITHUB_WORKSPACE/theos/sdks/"
+
+      - name: Clone headers and YTVideoOverlay
+        run: |
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YouTubeHeader.git "$THEOS/include/YouTubeHeader"
+          git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git "$THEOS/include/PSHeader"
+          git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git YTVideoOverlay
+
+      - name: Build rootless and rootful packages
+        working-directory: YouVOT
+        run: |
+          make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          make clean package DEBUG=0 FINALPACKAGE=1
+          ls -l packages
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouVOT-debs
+          path: YouVOT/packages/*.deb
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: YouVOT
+        run: gh release create "$GITHUB_REF_NAME" packages/*.deb --repo "$GITHUB_REPOSITORY" --title "YouVOT ${GITHUB_REF_NAME#v}" --generate-notes

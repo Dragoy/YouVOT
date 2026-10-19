@@ -1,0 +1,10 @@
+Package: com.dragoy.youvot
+Name: YouVOT
+Version: 1.4.0
+Architecture: iphoneos-arm
+Description: Yandex voice-over translation for the YouTube app: your language, lively voices, auto-translate. A native port of voice-over-translation.
+Maintainer: Dragoy
+Author: Dragoy
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 15.0), com.ps.ytvideooverlay (>= 2.3.2)
+Depiction: https://github.com/Dragoy/YouVOT
